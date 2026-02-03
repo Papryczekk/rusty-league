@@ -1,0 +1,11 @@
+[package]
+name = "rusty-league"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arboard = "3.6.1"
+eframe = "0.33.3"
+egui = "0.33.3"
+enigo = "0.6.1"
+keyring = "3.6.3"
