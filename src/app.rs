@@ -67,6 +67,7 @@ impl RustyLeagueApp {
 
 impl eframe::App for RustyLeagueApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(egui::Visuals::dark());
         ctx.set_pixels_per_point(1.5);
 
         let mut close_alert = false;
@@ -198,7 +199,7 @@ impl RustyLeagueApp {
                 });
 
                 let label_col_width = 115.0; 
-                let field_width = 220.0;     
+                let field_width = 250.0;     
                 let grid_spacing = [15.0, 15.0];
 
                 let estimated_grid_width = label_col_width + field_width + grid_spacing[0];
@@ -229,7 +230,7 @@ impl RustyLeagueApp {
                                 let gap = ui.spacing().item_spacing.x; 
                                 let hash_width_approx = 10.0;
                                 
-                                let safety_margin = 6.0;
+                                let safety_margin = 6.5;
 
                                 let name_width = field_width - tag_width - (gap * 2.0) - hash_width_approx - safety_margin;
 
@@ -304,13 +305,30 @@ impl RustyLeagueApp {
                         .show(ui, |ui| {
                             ui.label("Choose account:");
                             ui.horizontal(|ui| {
-                                egui::ComboBox::from_id_salt("account_combo")
-                                    .selected_text(&self.selected_account_display)
-                                    .width(field_width + 8.0) 
+                                let (display_name, display_region) = {
+                                    let parts: Vec<&str> = self.selected_account_display.split("           ").collect();
+                                    let name = parts.first().map(|s| s.to_string()).unwrap_or_else(|| self.selected_account_display.clone());
+                                    let region = parts.get(1).map(|s| s.to_string());
+                                    (name, region)
+                                };
+
+                                let combo = egui::ComboBox::from_id_salt("account_combo")
+                                    .selected_text(&display_name)
+                                    .width(field_width + 8.0)
                                     .show_ui(ui, |ui| {
                                         for account in &self.saved_accounts {
                                             let label = format!("{}           {}", account.full_name(), account.region);
-                                            if ui.selectable_label(self.selected_account_display == label, &label).clicked() {
+                                            let is_selected = self.selected_account_display == label;
+
+                                            let font_id = egui::TextStyle::Body.resolve(ui.style());
+                                            let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+                                            
+                                            let (rect, response) = ui.allocate_exact_size(
+                                                egui::vec2(ui.available_width(), row_height), 
+                                                egui::Sense::click()
+                                            );
+                                            
+                                            if response.clicked() {
                                                 self.selected_account_display = label.clone();
                                                 self.username = account.username.clone();
                                                 self.password = account.password.clone();
@@ -318,8 +336,54 @@ impl RustyLeagueApp {
                                                 self.in_game_name = account.in_game_name.clone();
                                                 self.custom_tag = account.custom_tag.clone();
                                             }
+
+                                            let visuals = ui.style().interact_selectable(&response, is_selected);
+                                            
+                                            if is_selected || response.hovered() || response.has_focus() {
+                                                ui.painter().rect(
+                                                    rect,
+                                                    visuals.corner_radius,
+                                                    visuals.bg_fill,
+                                                    visuals.bg_stroke,
+                                                    egui::StrokeKind::Outside,
+                                                );
+                                            }
+                                            
+                                            let text_color = visuals.text_color();
+                                            let padding = 4.0;
+                                            
+                                            ui.painter().text(
+                                                rect.left_center() + egui::vec2(padding, 0.0),
+                                                egui::Align2::LEFT_CENTER,
+                                                account.full_name(),
+                                                font_id.clone(),
+                                                text_color,
+                                            );
+                                            
+                                            ui.painter().text(
+                                                rect.right_center() - egui::vec2(padding, 0.0),
+                                                egui::Align2::RIGHT_CENTER,
+                                                &account.region,
+                                                font_id,
+                                                text_color,
+                                            );
                                         }
                                     });
+
+                                if let Some(region) = &display_region {
+                                    let rect = combo.response.rect;
+                                    let font_id = egui::TextStyle::Body.resolve(ui.style());
+                                    let visuals = ui.style().interact_selectable(&combo.response, false); 
+                                    let text_color = visuals.text_color();
+                                    
+                                    ui.painter().text(
+                                        rect.right_center() - egui::vec2(25.0, 0.0),
+                                        egui::Align2::RIGHT_CENTER,
+                                        region,
+                                        font_id,
+                                        text_color,
+                                    );
+                                }
 
                                 if ui.button("📋").on_hover_text("Skopiuj nick").clicked() {
                                     if self.selected_account_display != "Select an account..." {
@@ -352,7 +416,7 @@ impl RustyLeagueApp {
 
                 ui.horizontal(|ui| {
                     let login_btn_width = 250.0;
-                    let kill_btn_width = 130.0; 
+                    let kill_btn_width = 125.5; 
                     let spacing = 20.0;
                     let total_width = login_btn_width + kill_btn_width + spacing;
                     

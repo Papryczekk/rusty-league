@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::os::windows::process::CommandExt;
 use std::{thread, time};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use uiautomation::{UIAutomation, UIElement};
@@ -13,9 +14,12 @@ pub fn kill_league_processes() {
         "League of Legends.exe",
     ];
 
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     for process in processes {
         let _ = Command::new("taskkill")
             .args(["/F", "/IM", process])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
 }
