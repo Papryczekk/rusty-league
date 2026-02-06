@@ -24,8 +24,11 @@ pub struct RustyLeagueApp {
     selected_account_display: String, 
     
     show_delete_confirmation: bool,
+    show_password: bool,
 
     alert_message: Option<String>,
+    dragged_account_idx: Option<usize>,
+    drag_offset: Option<egui::Vec2>,
 }
 
 impl Default for RustyLeagueApp {
@@ -54,7 +57,10 @@ impl Default for RustyLeagueApp {
             saved_accounts: accounts,
             selected_account_display: "Select an account...".to_owned(),
             show_delete_confirmation: false,
+            show_password: false,
             alert_message: None,
+            dragged_account_idx: None,
+            drag_offset: None,
         }
     }
 }
@@ -221,7 +227,19 @@ impl RustyLeagueApp {
                             ui.end_row();
 
                             ui.label("Password:");
-                            ui.add(egui::TextEdit::singleline(&mut self.password).password(true).desired_width(field_width));
+                            let password_response = ui.add(egui::TextEdit::singleline(&mut self.password).password(!self.show_password).desired_width(field_width));
+                            
+                            let eye_icon = if self.show_password { "🚫" } else { "👁" };
+                            let password_rect = password_response.rect;
+
+                            ui.scope_builder(egui::UiBuilder::new().max_rect(password_rect), |ui| {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.add_space(8.0); 
+                                    if ui.add(egui::Button::new(eye_icon).frame(false).small()).on_hover_text("Show/Hide password").clicked() {
+                                        self.show_password = !self.show_password;
+                                    }
+                                });
+                            });
                             ui.end_row();
 
                             ui.label("In-game name:");
@@ -234,7 +252,16 @@ impl RustyLeagueApp {
 
                                 let name_width = field_width - tag_width - (gap * 2.0) - hash_width_approx - safety_margin;
 
-                                ui.add(egui::TextEdit::singleline(&mut self.in_game_name).desired_width(name_width));
+                                let name_response = ui.add(egui::TextEdit::singleline(&mut self.in_game_name).desired_width(name_width));
+                                if name_response.changed() {
+                                    if self.in_game_name.contains('#') {
+                                        if let Some((name, tag)) = self.in_game_name.clone().split_once('#') {
+                                            self.in_game_name = name.to_string();
+                                            self.custom_tag = tag.to_string();
+                                        }
+                                    }
+                                }
+
                                 ui.label("#");
                                 let tag_response = ui.add(
                                     egui::TextEdit::singleline(&mut self.custom_tag)
@@ -312,11 +339,18 @@ impl RustyLeagueApp {
                                     (name, region)
                                 };
 
-                                let combo = egui::ComboBox::from_id_salt("account_combo")
+                                let current_drag_idx = self.dragged_account_idx;
+                                
+                                let combo_response = egui::ComboBox::from_id_salt("account_combo")
                                     .selected_text(&display_name)
                                     .width(field_width + 8.0)
+                                    .height(250.0)
                                     .show_ui(ui, |ui| {
-                                        for account in &self.saved_accounts {
+                                        let mut swap_request = None;
+                                        let mut new_drag_idx = None;
+                                        let mut selected_account_idx = None;
+
+                                        for (idx, account) in self.saved_accounts.iter().enumerate() {
                                             let label = format!("{}           {}", account.full_name(), account.region);
                                             let is_selected = self.selected_account_display == label;
 
@@ -325,55 +359,172 @@ impl RustyLeagueApp {
                                             
                                             let (rect, response) = ui.allocate_exact_size(
                                                 egui::vec2(ui.available_width(), row_height), 
-                                                egui::Sense::click()
+                                                egui::Sense::click_and_drag()
                                             );
                                             
-                                            if response.clicked() {
-                                                self.selected_account_display = label.clone();
-                                                self.username = account.username.clone();
-                                                self.password = account.password.clone();
-                                                self.region = account.region.clone();
-                                                self.in_game_name = account.in_game_name.clone();
-                                                self.custom_tag = account.custom_tag.clone();
+                                            if response.drag_started() {
+                                                new_drag_idx = Some(idx);
+                                                if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                                                     self.drag_offset = Some(pointer_pos - rect.min);
+                                                }
                                             }
 
-                                            let visuals = ui.style().interact_selectable(&response, is_selected);
+                                            if let Some(dragged_idx) = current_drag_idx {
+                                                if dragged_idx != idx {
+                                                    if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                                                        if rect.contains(pointer_pos) {
+                                                            let center_y = rect.center().y;
+                                                            let should_swap = if dragged_idx < idx {
+                                                                pointer_pos.y > center_y
+                                                            } else {
+                                                                pointer_pos.y < center_y
+                                                            };
+
+                                                            if should_swap {
+                                                                swap_request = Some((dragged_idx, idx));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             
-                                            if is_selected || response.hovered() || response.has_focus() {
-                                                ui.painter().rect(
-                                                    rect,
-                                                    visuals.corner_radius,
-                                                    visuals.bg_fill,
-                                                    visuals.bg_stroke,
-                                                    egui::StrokeKind::Outside,
+                                            if response.clicked() && !response.dragged() {
+                                                selected_account_idx = Some(idx);
+                                            }
+
+                                            let is_being_dragged = current_drag_idx == Some(idx);
+
+                                            if is_being_dragged {
+                                                let corner_radius = ui.visuals().widgets.inactive.corner_radius;
+                                                ui.painter().rect_filled(
+                                                    rect, 
+                                                    corner_radius, 
+                                                    ui.visuals().widgets.inactive.bg_fill.linear_multiply(0.5)
+                                                );
+                                                
+                                                if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                                                    let layer_id = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drag_ghost"));
+                                                    let painter = ui.ctx().layer_painter(layer_id);
+                                                    
+                                                    let ghost_pos = if let Some(offset) = self.drag_offset {
+                                                        pointer_pos - offset
+                                                    } else {
+                                                        pointer_pos + egui::vec2(10.0, 10.0)
+                                                    };
+
+                                                    let ghost_rect = egui::Rect::from_min_size(ghost_pos, rect.size());
+                                                    
+                                                    let ghost_bg = ui.visuals().widgets.active.bg_fill;
+                                                    let ghost_stroke = ui.visuals().widgets.active.bg_stroke;
+                                                    let ghost_text_color = ui.visuals().widgets.active.text_color();
+                                                    let ghost_radius = ui.visuals().widgets.active.corner_radius;
+                                                    
+                                                    let shadow_rect = ghost_rect.translate(egui::vec2(2.0, 2.0));
+                                                    painter.rect_filled(shadow_rect, ghost_radius, egui::Color32::from_black_alpha(100));
+
+                                                    painter.rect_filled(ghost_rect, ghost_radius, ghost_bg);
+                                                    painter.rect_stroke(ghost_rect, ghost_radius, ghost_stroke, egui::StrokeKind::Outside);
+                                                    
+                                                    let padding = 4.0;
+                                                    painter.text(
+                                                        ghost_rect.left_center() + egui::vec2(padding, 0.0),
+                                                        egui::Align2::LEFT_CENTER,
+                                                        account.full_name(),
+                                                        font_id.clone(),
+                                                        ghost_text_color,
+                                                    );
+                                                    
+                                                    painter.text(
+                                                        ghost_rect.right_center() - egui::vec2(padding, 0.0),
+                                                        egui::Align2::RIGHT_CENTER,
+                                                        &account.region,
+                                                        font_id.clone(),
+                                                        ghost_text_color,
+                                                    );
+                                                }
+                                                ui.ctx().request_repaint();
+                                            } else {
+                                                let mut visuals = ui.style().interact_selectable(&response, is_selected);
+                                                
+                                                if  current_drag_idx.is_some() {
+                                                     visuals.bg_fill = visuals.bg_fill.linear_multiply(0.8);
+                                                }
+                                                
+                                                if let Some(d_idx) = current_drag_idx {
+                                                    if d_idx != idx && response.hovered() {
+                                                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                                    }
+                                                }
+
+                                                if is_selected || response.hovered() || response.has_focus() {
+                                                    ui.painter().rect(
+                                                        rect,
+                                                        visuals.corner_radius,
+                                                        visuals.bg_fill,
+                                                        visuals.bg_stroke,
+                                                        egui::StrokeKind::Outside,
+                                                    );
+                                                }
+                                                
+                                                let text_color = visuals.text_color();
+                                                let padding = 4.0;
+                                                
+                                                ui.painter().text(
+                                                    rect.left_center() + egui::vec2(padding, 0.0),
+                                                    egui::Align2::LEFT_CENTER,
+                                                    account.full_name(),
+                                                    font_id.clone(),
+                                                    text_color,
+                                                );
+                                                
+                                                ui.painter().text(
+                                                    rect.right_center() - egui::vec2(padding, 0.0),
+                                                    egui::Align2::RIGHT_CENTER,
+                                                    &account.region,
+                                                    font_id,
+                                                    text_color,
                                                 );
                                             }
-                                            
-                                            let text_color = visuals.text_color();
-                                            let padding = 4.0;
-                                            
-                                            ui.painter().text(
-                                                rect.left_center() + egui::vec2(padding, 0.0),
-                                                egui::Align2::LEFT_CENTER,
-                                                account.full_name(),
-                                                font_id.clone(),
-                                                text_color,
-                                            );
-                                            
-                                            ui.painter().text(
-                                                rect.right_center() - egui::vec2(padding, 0.0),
-                                                egui::Align2::RIGHT_CENTER,
-                                                &account.region,
-                                                font_id,
-                                                text_color,
-                                            );
                                         }
+                                        (swap_request, new_drag_idx, selected_account_idx)
                                     });
 
+                                if let Some((swap, drag_start, selection)) = combo_response.inner {
+                                    if let Some(idx) = drag_start {
+                                        self.dragged_account_idx = Some(idx);
+                                    }
+
+                                    if let Some((from, to)) = swap {
+                                        self.saved_accounts.swap(from, to);
+                                        self.dragged_account_idx = Some(to);
+                                    }
+
+                                    if let Some(idx) = selection {
+                                        if let Some(account) = self.saved_accounts.get(idx) {
+                                            self.selected_account_display = format!("{}           {}", account.full_name(), account.region);
+                                            self.username = account.username.clone();
+                                            self.password = account.password.clone();
+                                            self.region = account.region.clone();
+                                            self.in_game_name = account.in_game_name.clone();
+                                            self.custom_tag = account.custom_tag.clone();
+                                        }
+                                    }
+                                }
+                                
+                                if ui.input(|i| i.pointer.any_released()) {
+                                    if self.dragged_account_idx.is_some() {
+                                        self.dragged_account_idx = None;
+                                        self.drag_offset = None;
+                                        if let Err(e) = credentials::save_accounts(&self.saved_accounts) {
+                                            self.alert_message = Some(format!("Error saving accounts: {}", e));
+                                        }
+                                    }
+                                }
+
                                 if let Some(region) = &display_region {
-                                    let rect = combo.response.rect;
+                                    let rect = combo_response.response.rect;
                                     let font_id = egui::TextStyle::Body.resolve(ui.style());
-                                    let visuals = ui.style().interact_selectable(&combo.response, false); 
+                                    let visuals = ui.style().interact_selectable(&combo_response.response, false); 
                                     let text_color = visuals.text_color();
                                     
                                     ui.painter().text(

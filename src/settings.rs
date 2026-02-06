@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use directories::ProjectDirs;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Settings {
@@ -16,25 +16,33 @@ impl Default for Settings {
 }
 
 pub fn save_settings(settings: &Settings) -> std::io::Result<()> {
-    let dir_path = "credentials";
-    if !Path::new(dir_path).exists() {
-        fs::create_dir(dir_path)?;
+    if let Some(proj_dirs) = ProjectDirs::from("pl", "Rusty Credentials", "") {
+        let config_dir = proj_dirs.config_dir();
+        if !config_dir.exists() {
+            fs::create_dir_all(config_dir)?;
+        }
+        
+        let file_path = config_dir.join("settings.json");
+        let json = serde_json::to_string_pretty(settings)?;
+        fs::write(file_path, json)?;
+        Ok(())
+    } else {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Could not determine config directory"))
     }
-    
-    let file_path = format!("{}/settings.json", dir_path);
-    let json = serde_json::to_string_pretty(settings)?;
-    fs::write(file_path, json)?;
-    Ok(())
 }
 
 pub fn load_settings() -> Settings {
-    let file_path = "credentials/settings.json";
-    if !Path::new(file_path).exists() {
-        return Settings::default();
-    }
+    if let Some(proj_dirs) = ProjectDirs::from("pl", "Rusty Credentials", "") {
+        let file_path = proj_dirs.config_dir().join("settings.json");
+        if !file_path.exists() {
+            return Settings::default();
+        }
 
-    match fs::read_to_string(file_path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => Settings::default(),
+        match fs::read_to_string(file_path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Err(_) => Settings::default(),
+        }
+    } else {
+        Settings::default()
     }
 }
