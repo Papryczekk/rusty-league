@@ -292,35 +292,6 @@ impl RustyLeagueApp {
 
                 ui.add_space(15.0);
 
-                ui.horizontal(|ui| {
-                    ui.add_space(final_margin + label_col_width + grid_spacing[0]);
-                    
-                    if ui.button("Save Account").clicked() {
-                        if self.username.is_empty() {
-                            self.alert_message = Some("Username cannot be empty!".to_owned());
-                            return;
-                        }
-
-                        let new_account = Account::new(
-                            self.username.clone(),
-                            self.password.clone(),
-                            self.region.clone(),
-                            self.in_game_name.clone(),
-                            self.custom_tag.clone(),
-                        );
-                        
-                        self.saved_accounts.retain(|acc| acc.username != new_account.username);
-                        self.saved_accounts.push(new_account.clone());
-                        
-                        if let Err(e) = credentials::save_accounts(&self.saved_accounts) {
-                            self.alert_message = Some(format!("Error saving accounts: {}", e));
-                        } else {
-                            self.selected_account_display = format!("{}           {}", new_account.full_name(), new_account.region);
-                            self.alert_message = Some("Account saved successfully!".to_owned());
-                        }
-                    }
-                });
-
                 ui.add_space(25.0);
 
                 ui.horizontal(|ui| {
@@ -556,7 +527,33 @@ impl RustyLeagueApp {
                 ui.horizontal(|ui| {
                      ui.add_space(final_margin + label_col_width + grid_spacing[0]);
                      
-                     if ui.button("Delete Account").clicked() {
+                     let btn_width = ((field_width + 8.0) - ui.spacing().item_spacing.x) / 2.0;
+
+                     if ui.add(egui::Button::new("Save Account").min_size(egui::vec2(btn_width, 0.0))).clicked() {
+                         if self.username.is_empty() {
+                             self.alert_message = Some("Username cannot be empty!".to_owned());
+                         } else {
+                             let new_account = Account::new(
+                                 self.username.clone(),
+                                 self.password.clone(),
+                                 self.region.clone(),
+                                 self.in_game_name.clone(),
+                                 self.custom_tag.clone(),
+                             );
+ 
+                             self.saved_accounts.retain(|acc| acc.username != new_account.username);
+                             self.saved_accounts.push(new_account.clone());
+ 
+                             if let Err(e) = credentials::save_accounts(&self.saved_accounts) {
+                                 self.alert_message = Some(format!("Error saving accounts: {}", e));
+                             } else {
+                                 self.selected_account_display = format!("{}           {}", new_account.full_name(), new_account.region);
+                                 self.alert_message = Some("Account saved successfully!".to_owned());
+                             }
+                         }
+                     }
+
+                     if ui.add(egui::Button::new("Delete Account").min_size(egui::vec2(btn_width, 0.0))).clicked() {
                         if self.selected_account_display != "Select an account..." {
                             self.show_delete_confirmation = true;
                         }
