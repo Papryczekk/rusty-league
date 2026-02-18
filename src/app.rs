@@ -46,16 +46,37 @@ impl Default for RustyLeagueApp {
              let _ = credentials::save_accounts(&[]);
         }
 
+        let (selected_display, sel_username, sel_password, sel_region, sel_ign, sel_tag) = 
+            if let Some(first) = accounts.first() {
+                (
+                    format!("{}           {}", first.full_name(), first.region),
+                    first.username.clone(),
+                    first.password.clone(),
+                    first.region.clone(),
+                    first.in_game_name.clone(),
+                    first.custom_tag.clone(),
+                )
+            } else {
+                (
+                    "Select an account...".to_owned(),
+                    String::new(),
+                    String::new(),
+                    "EUNE".to_owned(),
+                    String::new(),
+                    String::new(),
+                )
+            };
+
         Self {
             current_view: start_view,
             settings: settings,
-            username: String::new(),
-            password: String::new(),
-            region: "EUNE".to_owned(),
-            in_game_name: String::new(),
-            custom_tag: String::new(),
+            username: sel_username,
+            password: sel_password,
+            region: sel_region,
+            in_game_name: sel_ign,
+            custom_tag: sel_tag,
             saved_accounts: accounts,
-            selected_account_display: "Select an account...".to_owned(),
+            selected_account_display: selected_display,
             show_delete_confirmation: false,
             show_password: false,
             alert_message: None,
@@ -108,6 +129,17 @@ impl eframe::App for RustyLeagueApp {
 
 impl RustyLeagueApp {
     fn render_settings_view(&mut self, ctx: &egui::Context) {
+        egui::Area::new(egui::Id::new("settings_gear_area"))
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -10.0))
+            .show(ctx, |ui| {
+                 if ui.add(egui::Button::new("⚙").frame(false).min_size(egui::vec2(30.0, 30.0))).clicked() {
+                     if let Err(e) = settings::save_settings(&self.settings) {
+                         self.alert_message = Some(format!("Error saving settings: {}", e));
+                     }
+                     self.current_view = View::Login;
+                 }
+            });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
@@ -136,7 +168,112 @@ impl RustyLeagueApp {
                     }
                 });
 
-                ui.add_space(30.0);
+                ui.add_space(25.0);
+
+                ui.horizontal(|ui| {
+                    let switch_width = 40.0;
+                    let switch_height = 20.0;
+                    let label_text = "Minimalist Mode";
+                    let label_galley = ui.painter().layout_no_wrap(
+                        label_text.to_string(),
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        ui.visuals().text_color(),
+                    );
+                    let label_width = label_galley.size().x;
+                    let total_w = label_width + 10.0 + switch_width;
+                    let avail = ui.available_width();
+                    ui.add_space(((avail - total_w) / 2.0).max(0.0));
+
+                    ui.label(label_text);
+                    ui.add_space(10.0);
+
+                    let desired_size = egui::vec2(switch_width, switch_height);
+                    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+                    if response.clicked() {
+                        self.settings.minimalist_mode = !self.settings.minimalist_mode;
+                        let _ = settings::save_settings(&self.settings);
+                    }
+
+                    let how_on = ui.ctx().animate_bool_with_time(
+                        response.id,
+                        self.settings.minimalist_mode,
+                        0.2,
+                    );
+
+                    let corner_radius = switch_height / 2.0;
+                    let bg_color = egui::Color32::from_rgb(
+                        (60.0 + (0.0 - 60.0) * how_on) as u8,
+                        (60.0 + (180.0 - 60.0) * how_on) as u8,
+                        (60.0 + (80.0 - 60.0) * how_on) as u8,
+                    );
+                    ui.painter().rect_filled(rect, corner_radius, bg_color);
+
+                    let circle_radius = (switch_height / 2.0) - 2.0;
+                    let circle_x = rect.left() + circle_radius + 2.0
+                        + how_on * (switch_width - switch_height);
+                    let circle_center = egui::pos2(circle_x, rect.center().y);
+                    ui.painter().circle_filled(
+                        circle_center,
+                        circle_radius,
+                        egui::Color32::WHITE,
+                    );
+                });
+
+                ui.add_space(15.0);
+
+                ui.horizontal(|ui| {
+                    let switch_width = 40.0;
+                    let switch_height = 20.0;
+                    let label_text = "Start with Windows";
+                    let label_galley = ui.painter().layout_no_wrap(
+                        label_text.to_string(),
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        ui.visuals().text_color(),
+                    );
+                    let label_width = label_galley.size().x;
+                    let total_w = label_width + 10.0 + switch_width;
+                    let avail = ui.available_width();
+                    ui.add_space(((avail - total_w) / 2.0).max(0.0));
+
+                    ui.label(label_text);
+                    ui.add_space(10.0);
+
+                    let desired_size = egui::vec2(switch_width, switch_height);
+                    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+                    if response.clicked() {
+                        self.settings.start_with_windows = !self.settings.start_with_windows;
+                        let _ = settings::save_settings(&self.settings);
+                        if let Err(e) = settings::set_autostart(self.settings.start_with_windows) {
+                            self.alert_message = Some(format!("Autostart error: {}", e));
+                        }
+                    }
+
+                    let how_on = ui.ctx().animate_bool_with_time(
+                        response.id,
+                        self.settings.start_with_windows,
+                        0.2,
+                    );
+
+                    let corner_radius = switch_height / 2.0;
+                    let bg_color = egui::Color32::from_rgb(
+                        (60.0 + (0.0 - 60.0) * how_on) as u8,
+                        (60.0 + (180.0 - 60.0) * how_on) as u8,
+                        (60.0 + (80.0 - 60.0) * how_on) as u8,
+                    );
+                    ui.painter().rect_filled(rect, corner_radius, bg_color);
+
+                    let circle_radius = (switch_height / 2.0) - 2.0;
+                    let circle_x = rect.left() + circle_radius + 2.0
+                        + how_on * (switch_width - switch_height);
+                    let circle_center = egui::pos2(circle_x, rect.center().y);
+                    ui.painter().circle_filled(
+                        circle_center,
+                        circle_radius,
+                        egui::Color32::WHITE,
+                    );
+                });
+
+                ui.add_space(25.0);
 
                 if ui.button("Confirm Settings").clicked() {
                     if self.settings.riot_client_path.is_empty() {
@@ -156,6 +293,11 @@ impl RustyLeagueApp {
     }
 
     fn render_login_view(&mut self, ctx: &egui::Context) {
+        if self.settings.minimalist_mode {
+            self.render_minimalist_view(ctx);
+            return;
+        }
+
         if self.show_delete_confirmation {
             egui::Window::new("Potwierdzenie")
                 .collapsible(false)
@@ -208,7 +350,7 @@ impl RustyLeagueApp {
                 let field_width = 250.0;     
                 let grid_spacing = [15.0, 15.0];
 
-                let estimated_grid_width = label_col_width + field_width + grid_spacing[0];
+                let estimated_grid_width = label_col_width + (field_width + 8.0) + grid_spacing[0];
                 let margin_left = (ui.available_width() - estimated_grid_width) / 2.0;
                 let final_margin = if margin_left > 0.0 { margin_left } else { 10.0 };
 
@@ -566,7 +708,8 @@ impl RustyLeagueApp {
                     let login_btn_width = 250.0;
                     let kill_btn_width = 125.5; 
                     let spacing = 20.0;
-                    let total_width = login_btn_width + kill_btn_width + spacing;
+                    let item_sp = ui.spacing().item_spacing.x;
+                    let total_width = login_btn_width + kill_btn_width + spacing + item_sp;
                     
                     let margin = (ui.available_width() - total_width) / 2.0;
                     ui.add_space(margin.max(0.0));
@@ -587,11 +730,154 @@ impl RustyLeagueApp {
 
                     ui.add_space(spacing);
 
-                    if ui.button("Kill League Process").clicked() {
+                    let kill_btn = egui::Button::new(
+                        egui::RichText::new("Kill League Process").color(egui::Color32::WHITE)
+                    )
+                    .fill(egui::Color32::from_rgb(180, 40, 40))
+                    .min_size(egui::vec2(kill_btn_width, 50.0));
+                    if ui.add(kill_btn).clicked() {
                         launcher::kill_league_processes();
                         self.alert_message = Some("League processes killed.".to_owned());
                     }
                 });
+            });
+        });
+    }
+
+    fn render_minimalist_view(&mut self, ctx: &egui::Context) {
+        egui::Area::new(egui::Id::new("minimalist_settings_area"))
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -10.0))
+            .show(ctx, |ui| {
+                 if ui.add(egui::Button::new("⚙").frame(false).min_size(egui::vec2(30.0, 30.0))).clicked() {
+                     self.current_view = View::Settings;
+                 }
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(40.0);
+                ui.heading("Rusty League");
+                ui.add_space(30.0);
+
+                let field_width = 300.0;
+
+                ui.horizontal(|ui| {
+                    let combo_width = field_width;
+                    let avail = ui.available_width();
+                    ui.add_space(((avail - combo_width) / 2.0).max(0.0));
+
+                    let (display_name, display_region) = {
+                        let parts: Vec<&str> = self.selected_account_display.split("           ").collect();
+                        let name = parts.first().map(|s| s.to_string()).unwrap_or_else(|| self.selected_account_display.clone());
+                        let region = parts.get(1).map(|s| s.to_string());
+                        (name, region)
+                    };
+
+                    let combo_response = egui::ComboBox::from_id_salt("minimalist_account_combo")
+                        .selected_text(&display_name)
+                        .width(combo_width)
+                        .height(250.0)
+                        .show_ui(ui, |ui| {
+                            let mut selected_idx = None;
+                            for (idx, account) in self.saved_accounts.iter().enumerate() {
+                                let label = format!("{}           {}", account.full_name(), account.region);
+                                let is_selected = self.selected_account_display == label;
+
+                                let font_id = egui::TextStyle::Body.resolve(ui.style());
+                                let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+
+                                let (rect, response) = ui.allocate_exact_size(
+                                    egui::vec2(ui.available_width(), row_height),
+                                    egui::Sense::click()
+                                );
+
+                                if response.clicked() {
+                                    selected_idx = Some(idx);
+                                }
+
+                                let visuals = ui.style().interact_selectable(&response, is_selected);
+                                if is_selected || response.hovered() || response.has_focus() {
+                                    ui.painter().rect(
+                                        rect,
+                                        visuals.corner_radius,
+                                        visuals.bg_fill,
+                                        visuals.bg_stroke,
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+
+                                let text_color = visuals.text_color();
+                                let padding = 4.0;
+                                ui.painter().text(
+                                    rect.left_center() + egui::vec2(padding, 0.0),
+                                    egui::Align2::LEFT_CENTER,
+                                    account.full_name(),
+                                    font_id.clone(),
+                                    text_color,
+                                );
+                                ui.painter().text(
+                                    rect.right_center() - egui::vec2(padding, 0.0),
+                                    egui::Align2::RIGHT_CENTER,
+                                    &account.region,
+                                    font_id,
+                                    text_color,
+                                );
+                            }
+                            selected_idx
+                        });
+
+                    if let Some(Some(idx)) = combo_response.inner {
+                        if let Some(account) = self.saved_accounts.get(idx) {
+                            self.selected_account_display = format!("{}           {}", account.full_name(), account.region);
+                            self.username = account.username.clone();
+                            self.password = account.password.clone();
+                            self.region = account.region.clone();
+                            self.in_game_name = account.in_game_name.clone();
+                            self.custom_tag = account.custom_tag.clone();
+                        }
+                    }
+
+                    if let Some(region) = &display_region {
+                        let rect = combo_response.response.rect;
+                        let font_id = egui::TextStyle::Body.resolve(ui.style());
+                        let visuals = ui.style().interact_selectable(&combo_response.response, false);
+                        let text_color = visuals.text_color();
+                        ui.painter().text(
+                            rect.right_center() - egui::vec2(25.0, 0.0),
+                            egui::Align2::RIGHT_CENTER,
+                            region,
+                            font_id,
+                            text_color,
+                        );
+                    }
+                });
+
+                ui.add_space(20.0);
+
+                let login_btn = egui::Button::new("Login To League")
+                    .min_size(egui::vec2(field_width, 50.0));
+                if ui.add(login_btn).clicked() {
+                    if self.username.is_empty() {
+                        self.alert_message = Some("Choose an account!".to_owned());
+                    } else {
+                        match launcher::launch_and_login(self.username.clone(), self.password.clone(), self.settings.riot_client_path.clone()) {
+                            Ok(_) => {},
+                            Err(e) => self.alert_message = Some(format!("Error: {}", e)),
+                        }
+                    }
+                }
+
+                ui.add_space(10.0);
+
+                let kill_btn = egui::Button::new(
+                    egui::RichText::new("Kill League Process").color(egui::Color32::WHITE)
+                )
+                .fill(egui::Color32::from_rgb(180, 40, 40))
+                .min_size(egui::vec2(field_width, 40.0));
+                if ui.add(kill_btn).clicked() {
+                    launcher::kill_league_processes();
+                    self.alert_message = Some("League processes killed.".to_owned());
+                }
             });
         });
     }
